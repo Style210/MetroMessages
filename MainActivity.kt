@@ -1,193 +1,1 @@
-package com.metromessages
-
-import android.content.Intent
-import android.net.Uri
-import android.os.Build
-import android.os.Bundle
-import android.provider.Telephony
-import android.widget.Toast
-import androidx.activity.ComponentActivity
-import androidx.activity.compose.setContent
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.activity.viewModels
-import androidx.annotation.RequiresApi
-import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
-import androidx.core.view.WindowCompat
-import androidx.lifecycle.lifecycleScope
-import com.metromessages.data.settingsscreen.SettingsPreferences
-import com.metromessages.ui.navigation.MetroNavHost
-import com.metromessages.ui.theme.enterImmersiveMode
-import com.metromessages.viewmodel.FacebookViewModel
-import dagger.hilt.android.AndroidEntryPoint
-import javax.inject.Inject
-
-@AndroidEntryPoint
-class MainActivity : ComponentActivity() {
-
-    @Inject lateinit var appInitializer: AppInitializer
-
-    private val defaultSmsLauncher = registerForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        when {
-            isDefaultSmsApp() -> handleDefaultSmsGranted()
-            result.resultCode != RESULT_CANCELED -> showDefaultSmsWarning()
-        }
-    }
-
-    private val facebookViewModel: FacebookViewModel by viewModels()
-
-    @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-
-        WindowCompat.setDecorFitsSystemWindows(window, false)
-        enterImmersiveMode(window)
-
-        appInitializer.initialize(lifecycleScope)
-        checkDefaultSmsStatus()
-
-        setContent {
-            // ✅ ADDED: Persistent gradient background at root level
-            MetroMessagesAppContent() // ✅ CHANGED: Renamed to avoid conflict
-        }
-
-        handleIncomingIntent(intent)
-
-        println("DEBUG: onCreate intent action: ${intent.action}, type: ${intent.type}")
-    }
-
-    override fun onNewIntent(intent: Intent) {
-        super.onNewIntent(intent)
-        println("DEBUG: onNewIntent action: ${intent.action}, type: ${intent.type}")
-        handleIncomingIntent(intent)
-    }
-
-    private fun handleIncomingIntent(intent: Intent) {
-        when (intent.action) {
-            Intent.ACTION_SEND -> {
-                handleSendIntent(intent)
-            }
-            Intent.ACTION_SEND_MULTIPLE -> {
-                handleSendMultipleIntent(intent)
-            }
-        }
-    }
-
-    private fun handleSendIntent(intent: Intent) {
-        val uri = intent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)
-        val type = intent.type
-        val text = intent.getStringExtra(Intent.EXTRA_TEXT)
-
-        if (uri != null) {
-            Toast.makeText(this, "Processing content from Gboard: $type", Toast.LENGTH_SHORT).show()
-            facebookViewModel.handleIncomingMedia(uri, type, text)
-        } else if (!text.isNullOrBlank()) {
-            facebookViewModel.updateDraftText(text)
-        }
-    }
-
-    private fun handleSendMultipleIntent(intent: Intent) {
-        val uris = intent.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM)
-        val type = intent.type
-
-        if (!uris.isNullOrEmpty()) {
-            Toast.makeText(this, "Processing multiple items: ${uris.size}", Toast.LENGTH_SHORT).show()
-            uris.forEach { uri ->
-                facebookViewModel.handleIncomingMedia(uri, type, null)
-            }
-        }
-    }
-
-    override fun onResume() {
-        super.onResume()
-        enterImmersiveMode(window)
-    }
-
-    override fun onWindowFocusChanged(hasFocus: Boolean) {
-        super.onWindowFocusChanged(hasFocus)
-        if (hasFocus) {
-            enterImmersiveMode(window)
-        }
-    }
-
-    private fun checkDefaultSmsStatus() {
-        if (!isDefaultSmsApp()) {
-            requestDefaultSmsApp()
-        } else {
-            handleDefaultSmsGranted()
-        }
-    }
-
-    private fun requestDefaultSmsApp() {
-        try {
-            val intent = Intent(Telephony.Sms.Intents.ACTION_CHANGE_DEFAULT).apply {
-                putExtra(Telephony.Sms.Intents.EXTRA_PACKAGE_NAME, packageName)
-            }
-            defaultSmsLauncher.launch(intent)
-        } catch (e: Exception) {
-            Toast.makeText(
-                this,
-                "Error requesting default SMS status",
-                Toast.LENGTH_SHORT
-            ).show()
-        }
-    }
-
-    private fun isDefaultSmsApp(): Boolean {
-        return packageName == Telephony.Sms.getDefaultSmsPackage(this)
-    }
-
-    private fun handleDefaultSmsGranted() {
-        Toast.makeText(this, "Default SMS access granted", Toast.LENGTH_SHORT).show()
-    }
-
-    private fun showDefaultSmsWarning() {
-        Toast.makeText(
-            this,
-            "Full features require being the default SMS app",
-            Toast.LENGTH_LONG
-        ).show()
-    }
-}
-
-// ✅ NEW: Root-level composable with persistent gradient - RENAMED to avoid conflict
-@RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
-@Composable
-fun MetroMessagesAppContent() { // ✅ CHANGED: Renamed from MetroMessagesApp to MetroMessagesAppContent
-    val context = LocalContext.current
-    val settingsPrefs = remember { SettingsPreferences(context) }
-    val accentColor by settingsPrefs.accentColorFlow.collectAsState(initial = Color(0xFF0063B1))
-
-    Box(modifier = Modifier.fillMaxSize()) {
-        // ✅ PERSISTENT GRADIENT BACKGROUND - Always there, never transitions
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            val gradientBrush = Brush.verticalGradient(
-                colors = listOf(
-                    accentColor.copy(alpha = 0.8f),    // Strong at top
-                    accentColor.copy(alpha = 0.4f),    // Medium
-                    accentColor.copy(alpha = 0.1f),    // Subtle
-                    Color.Transparent                  // Fade out
-                ),
-                startY = 0f,
-                endY = size.height * 0.4f // Cover top 40% of screen
-            )
-            drawRect(brush = gradientBrush)
-        }
-
-        // ✅ Your existing NavHost - ALL pages transition OVER the fixed gradient
-        MetroNavHost(
-            modifier = Modifier.fillMaxSize()
-        )
-    }
-}
+package com.metromessagesimport android.Manifestimport android.app.role.RoleManagerimport android.content.ComponentNameimport android.content.Intentimport android.content.pm.PackageManagerimport android.content.pm.ResolveInfoimport android.net.Uriimport android.os.Buildimport android.os.Bundleimport android.provider.Telephonyimport android.provider.Settingsimport android.util.Logimport android.widget.Toastimport androidx.activity.ComponentActivityimport androidx.activity.compose.setContentimport androidx.activity.result.contract.ActivityResultContractsimport androidx.activity.viewModelsimport androidx.annotation.RequiresApiimport androidx.compose.foundation.Canvasimport androidx.compose.foundation.layout.Boximport androidx.compose.foundation.layout.fillMaxSizeimport androidx.compose.runtime.Composableimport androidx.compose.runtime.collectAsStateimport androidx.compose.runtime.getValueimport androidx.compose.runtime.rememberimport androidx.compose.ui.Modifierimport androidx.compose.ui.graphics.Brushimport androidx.compose.ui.graphics.Colorimport androidx.compose.ui.platform.LocalContextimport androidx.core.content.ContextCompatimport androidx.core.view.WindowCompatimport androidx.lifecycle.lifecycleScopeimport com.metromessages.data.local.metromessagehub.MetroMessagesRepositoryimport com.metromessages.data.settingsscreen.SettingsPreferencesimport com.metromessages.ui.navigation.MetroNavHostimport com.metromessages.ui.theme.enterImmersiveModeimport dagger.hilt.android.AndroidEntryPointimport kotlinx.coroutines.delayimport kotlinx.coroutines.launchimport javax.inject.Inject@RequiresApi(Build.VERSION_CODES.O)@AndroidEntryPointclass MainActivity : ComponentActivity() {    @Inject lateinit var metroMessagesRepository: MetroMessagesRepository    @Inject lateinit var appInitializer: AppInitializer    private val metroMessagesViewModel: com.metromessages.data.local.metromessagehub.MetroMessagesViewModel by viewModels()    // SMS permissions only - FOSSIFY STYLE    private val smsPermissions = arrayOf(        Manifest.permission.READ_SMS,        Manifest.permission.RECEIVE_SMS,        Manifest.permission.SEND_SMS,        Manifest.permission.RECEIVE_MMS,        Manifest.permission.RECEIVE_WAP_PUSH    )    private val permissionLauncher = registerForActivityResult(        ActivityResultContracts.RequestMultiplePermissions()    ) { results ->        handlePermissionResults(results)    }    private val defaultSmsLauncher = registerForActivityResult(        ActivityResultContracts.StartActivityForResult()    ) { result ->        handleDefaultSmsResult(result.resultCode)    }    // ========== FIXED: Simplified flags ==========    private var uiShown = false    private var checkingSmsDefault = false    override fun onCreate(savedInstanceState: Bundle?) {        super.onCreate(savedInstanceState)        println("🚀 [MainActivity] FOSSIFY FLOW START - SIMPLIFIED")        // 🔥 FOSSIFY STEP 1: Request permissions IMMEDIATELY (no UI yet)        requestPermissionsImmediately()    }    private fun requestPermissionsImmediately() {        println("🔐 Requesting SMS permissions")        // Check if we already have permissions        if (hasSmsPermissions()) {            println("✅ Already has SMS permissions")            // Immediately check default SMS status            checkDefaultSmsStatus()        } else {            println("⚠️ Missing SMS permissions - requesting now")            // Show permission request dialog            showPermissionRequestDialog()        }    }    private fun showPermissionRequestDialog() {        // Show a simple permission explanation        android.app.AlertDialog.Builder(this)            .setTitle("SMS Permissions Required")            .setMessage("MetroMessages needs SMS permissions to send and receive messages.")            .setPositiveButton("Grant Permissions") { _, _ ->                // Request permissions                permissionLauncher.launch(smsPermissions)            }            .setNegativeButton("Exit") { _, _ ->                finish()            }            .setCancelable(false)            .show()    }    private fun hasSmsPermissions(): Boolean {        return smsPermissions.all { permission ->            ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED        }    }    private fun handlePermissionResults(results: Map<String, Boolean>) {        println("📋 Permission results received")        val allGranted = smsPermissions.all { permission ->            results[permission] == true        }        if (allGranted) {            println("✅ All SMS permissions granted")            // RUN DIAGNOSTICS            runSmsDiagnostics()            // Now check default SMS status            checkDefaultSmsStatus()        } else {            println("❌ SMS permissions denied")            Toast.makeText(                this,                "SMS permissions required. Please grant permissions in Settings.",                Toast.LENGTH_LONG            ).show()            finish() // Exit app if no permissions        }    }    private fun checkDefaultSmsStatus() {        // Prevent multiple checks        if (checkingSmsDefault) {            println("⚠️ Already checking SMS status - skipping")            return        }        checkingSmsDefault = true        println("📱 Checking default SMS status")        if (isDefaultSmsApp()) {            println("✅ Already default SMS app")            // We have permissions AND we're default - show UI            showAppUI()        } else {            println("⚠️ NOT default SMS app - prompting user immediately")            // Show prompt immediately            showDefaultSmsPrompt()        }    }    private fun showDefaultSmsPrompt() {        // Show prompt and open SMS chooser immediately        android.app.AlertDialog.Builder(this)            .setTitle("Set as Default SMS App")            .setMessage("MetroMessages needs to be your default SMS app to send and receive messages.")            .setPositiveButton("Set as Default") { _, _ ->                // Open SMS chooser immediately                openSystemSmsChooser()            }            .setNegativeButton("Exit") { _, _ ->                finish()            }            .setCancelable(false)            .show()    }    private fun openSystemSmsChooser() {        println("📱 Opening system SMS chooser")        try {            val intent = Intent(Telephony.Sms.Intents.ACTION_CHANGE_DEFAULT).apply {                putExtra(Telephony.Sms.Intents.EXTRA_PACKAGE_NAME, packageName)            }            // IMPORTANT: Launch immediately, no delay            defaultSmsLauncher.launch(intent)        } catch (e: Exception) {            println("❌ Error opening SMS chooser: ${e.message}")            // Fallback: Try the role manager (Android 10+)            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {                try {                    val roleManager = getSystemService(ROLE_SERVICE) as RoleManager                    if (roleManager.isRoleAvailable(RoleManager.ROLE_SMS)) {                        val roleIntent = roleManager.createRequestRoleIntent(RoleManager.ROLE_SMS)                        startActivityForResult(roleIntent, ROLE_SMS_REQUEST_CODE)                        return                    }                } catch (e2: Exception) {                    println("❌ Role manager also failed: ${e2.message}")                }            }            // Last resort: Open default apps settings            Toast.makeText(                this,                "Opening default apps settings...",                Toast.LENGTH_LONG            ).show()            val settingsIntent = Intent(Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS)            startActivity(settingsIntent)            finish()        }    }    private fun handleDefaultSmsResult(resultCode: Int) {        println("📱 SMS chooser result: $resultCode")        // Give system a moment to process        lifecycleScope.launch {            delay(1000)            if (isDefaultSmsApp()) {                println("🎉 SUCCESS! App is now default SMS")                // Now show the app UI                showAppUI()            } else {                println("⚠️ User did not set app as default")                Toast.makeText(                    this@MainActivity,                    "MetroMessages needs to be default SMS app to function.",                    Toast.LENGTH_LONG                ).show()                // Still show UI but SMS features will be disabled                showAppUI()            }        }    }    private fun showAppUI() {        // Prevent showing UI multiple times        if (uiShown) {            println("⚠️ UI already shown - skipping")            return        }        uiShown = true        println("🖥️ Showing app UI")        // Now setup and show the UI        WindowCompat.setDecorFitsSystemWindows(window, false)        enterImmersiveMode(window)        appInitializer.initialize(lifecycleScope)        setContent {            MetroMessagesAppContent()        }        // Load SMS data if we're default        if (isDefaultSmsApp()) {            loadSmsData()        } else {            println("⚠️ Not default SMS - SMS loading disabled")        }    }    private fun loadSmsData() {        println("📂 Loading SMS data now that we're default")        lifecycleScope.launch {            // Enable SMS loading in ViewModel            metroMessagesViewModel.enableSmsLoading()        }    }    // Helper methods    private fun isDefaultSmsApp(): Boolean {        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {            packageName == Telephony.Sms.getDefaultSmsPackage(this)        } else {            true        }    }    // ========== SMS DIAGNOSTICS ==========    private fun runSmsDiagnostics() {        Log.d("SMS_DIAGNOSTIC", "========== SMS DIAGNOSTICS ==========")        // 1. Check default SMS app        val defaultSmsPackage = Telephony.Sms.getDefaultSmsPackage(this)        Log.d("SMS_DIAGNOSTIC", "1. Default SMS package: $defaultSmsPackage")        Log.d("SMS_DIAGNOSTIC", "   Our package: $packageName")        Log.d("SMS_DIAGNOSTIC", "   Is default? ${packageName == defaultSmsPackage}")        // 2. Check SMS permissions        smsPermissions.forEach { permission ->            val hasPermission = ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED            Log.d("SMS_DIAGNOSTIC", "2. Permission $permission: $hasPermission")        }        // 3. Check receiver registration        val pm = packageManager        val smsIntent = Intent("android.provider.Telephony.SMS_DELIVER")        val smsReceivers = pm.queryBroadcastReceivers(smsIntent, PackageManager.GET_RESOLVED_FILTER)        Log.d("SMS_DIAGNOSTIC", "4. Total SMS_DELIVER receivers found: ${smsReceivers.size}")        var ourSmsReceiverFound = false        smsReceivers.forEach { info ->            if (info.activityInfo.packageName == packageName) {                ourSmsReceiverFound = true                Log.d("SMS_DIAGNOSTIC", "   ✅ OUR SMS Receiver found: ${info.activityInfo.name}")                Log.d("SMS_DIAGNOSTIC", "      Enabled: ${info.activityInfo.enabled}")                Log.d("SMS_DIAGNOSTIC", "      Exported: ${info.activityInfo.exported}")                Log.d("SMS_DIAGNOSTIC", "      Permission: ${info.activityInfo.permission}")            }        }        if (!ourSmsReceiverFound) {            Log.d("SMS_DIAGNOSTIC", "   ❌ OUR SMS Receiver NOT found in system")        }        // 5. Check MMS receiver        val mmsIntent = Intent("android.provider.Telephony.WAP_PUSH_DELIVER")        mmsIntent.type = "application/vnd.wap.mms-message"        val mmsReceivers = pm.queryBroadcastReceivers(mmsIntent, PackageManager.GET_RESOLVED_FILTER)        Log.d("SMS_DIAGNOSTIC", "5. Total WAP_PUSH_DELIVER receivers found: ${mmsReceivers.size}")        var ourMmsReceiverFound = false        mmsReceivers.forEach { info ->            if (info.activityInfo.packageName == packageName) {                ourMmsReceiverFound = true                Log.d("SMS_DIAGNOSTIC", "   ✅ OUR MMS Receiver found: ${info.activityInfo.name}")                Log.d("SMS_DIAGNOSTIC", "      Enabled: ${info.activityInfo.enabled}")                Log.d("SMS_DIAGNOSTIC", "      Exported: ${info.activityInfo.exported}")                Log.d("SMS_DIAGNOSTIC", "      Permission: ${info.activityInfo.permission}")            }        }        if (!ourMmsReceiverFound) {            Log.d("SMS_DIAGNOSTIC", "   ❌ OUR MMS Receiver NOT found in system")        }        Log.d("SMS_DIAGNOSTIC", "========== END DIAGNOSTICS ==========")    }    // ========== END DIAGNOSTICS ==========    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {        super.onActivityResult(requestCode, resultCode, data)        if (requestCode == ROLE_SMS_REQUEST_CODE) {            println("📱 Role manager SMS request result: $resultCode")            handleDefaultSmsResult(resultCode)        }    }    override fun onNewIntent(intent: Intent) {        super.onNewIntent(intent)        handleNotificationIntents(intent)        handleIncomingIntent(intent)    }    private fun handleNotificationIntents(intent: Intent?) {        // Keep your existing implementation    }    private fun handleIncomingIntent(intent: Intent) {        // Keep your existing implementation    }    override fun onResume() {        super.onResume()        enterImmersiveMode(window)    }    override fun onWindowFocusChanged(hasFocus: Boolean) {        super.onWindowFocusChanged(hasFocus)        if (hasFocus) {            enterImmersiveMode(window)        }    }    companion object {        private const val ROLE_SMS_REQUEST_CODE = 1002    }}@Composablefun MetroMessagesAppContent() {    val context = LocalContext.current    val settingsPrefs = remember { SettingsPreferences(context) }    val accentColor by settingsPrefs.accentColorFlow.collectAsState(initial = Color(0xFF0063B1))    Box(modifier = Modifier.fillMaxSize()) {        Canvas(modifier = Modifier.fillMaxSize()) {            val gradientBrush = Brush.verticalGradient(                colors = listOf(                    accentColor.copy(alpha = 0.0f),                    accentColor.copy(alpha = 0.0f),                    accentColor.copy(alpha = 0.0f),                    Color.Transparent                ),                startY = 0f,                endY = size.height * 0.4f            )            drawRect(brush = gradientBrush)        }        MetroNavHost(            modifier = Modifier.fillMaxSize()        )    }}
