@@ -2,7 +2,7 @@ package com.metromessages.attachments
 
 import android.content.Context
 import android.net.Uri
-import com.metromessages.data.local.MessageType
+import com.metromessages.data.local.metromessagehub.MessageType
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import javax.inject.Inject

@@ -1,7 +1,7 @@
 package com.metromessages.attachments
 
 import android.net.Uri
-import com.metromessages.data.local.MessageType
+import com.metromessages.data.local.metromessagehub.MessageType
 
 // Media type detection utilities
 fun Uri.getMediaType(): MediaType {
@@ -30,15 +30,22 @@ fun Uri.isPreviewable(): Boolean {
 }
 
 // Convert MessageType to simpler media category
+// ALTERNATIVE: Without MEDIA in enum
 fun MessageType.toMediaCategory(): String {
     return when (this) {
+        MessageType.TEXT -> "text"
         MessageType.IMAGE -> "image"
         MessageType.VIDEO -> "video"
         MessageType.AUDIO -> "audio"
+        MessageType.GIF -> "gif"
+        MessageType.STICKER -> "sticker"
         MessageType.FILE -> "file"
         MessageType.LINK -> "link"
-        MessageType.TEXT -> "text"
-        MessageType.MEDIA -> "media"
+        MessageType.LOCATION -> "location"
+        MessageType.CONTACT -> "contact"
+        MessageType.OTP -> "otp"
+        // No MEDIA case - it doesn't exist in your enum
+        else -> "unknown"  // Handle any future enum additions
     }
 }
 
