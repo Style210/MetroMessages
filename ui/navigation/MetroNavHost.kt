@@ -154,17 +154,13 @@ fun MetroNavHost(
                 metroMessagesViewModel = metroMessagesViewModel, // ✅ METROMESSAGES
                 navController = navController,
                 metroFont = metroFont,
-                onNavigateToConversation = { conversationId, contactName, contactPhotoUrl ->
-                    // ✅ FOSSIFY-STYLE: Let ConversationThreadScreen handle contact resolution
-                    // This follows Fossify's pattern where the conversation screen
-                    // extracts phone numbers from messages and resolves contacts
-
+                onNavigateToConversation = { conversation ->
                     navController.navigate(
                         MetroDestinations.SmsConversation.createRoute(
-                            conversationId = conversationId,
-                            contactId = 0L, // Will be resolved in ConversationThreadScreen
-                            contactName = contactName ?: "Unknown Contact",
-                            contactPhotoUrl = contactPhotoUrl,
+                            conversationId = conversation.threadId.toString(),
+                            contactId = conversation.contactId ?: 0L,   // 0 = unsaved number or group
+                            contactName = conversation.displayName,
+                            contactPhotoUrl = conversation.contactPhotoUri,
                             initialTab = 1
                         )
                     )

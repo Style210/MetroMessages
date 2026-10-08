@@ -20,13 +20,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.metromessages.data.local.metromessagehub.MetroConversation
 import com.metromessages.data.local.metromessagehub.MetroMessagesViewModel
 
 @Composable
 fun ArchiveTab(
     metroMessagesViewModel: MetroMessagesViewModel,
     modifier: Modifier = Modifier,
-    onConversationClick: (String, String?, String?) -> Unit,
+    onConversationClick: (MetroConversation) -> Unit,
     isAuthenticated: Boolean = false,
     onRequestAuthentication: () -> Unit
 ) {
@@ -42,7 +43,7 @@ fun ArchiveTab(
                 onConversationClick = onConversationClick,
                 filterPredicate = { it.isArchived }, // Only show archived conversations
                 emptyStateTitle = "No archived conversations",
-                emptyStateMessage = "Swipe right on conversations to archive them"
+                emptyStateMessage = "Press and hold a conversation to archive it"
             )
         }
     }

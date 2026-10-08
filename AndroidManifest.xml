@@ -116,6 +116,9 @@
             </intent-filter>
         </activity>
 
+        <!-- Radio result for outgoing SMS (internal only) -->
+        <receiver android:name=".SmsSentReceiver" android:exported="false" />
+
         <!-- SMS RECEIVER - FIXED WITH DIRECT BOOT AWARE -->
         <receiver
             android:name=".SmsReceiver"

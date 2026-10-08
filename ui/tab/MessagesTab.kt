@@ -2,7 +2,9 @@
 package com.metromessages.ui.tab
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -41,7 +43,7 @@ import com.metromessages.ui.theme.formatFriendlyTimestamp
 fun MessagesTab(
     metroMessagesViewModel: MetroMessagesViewModel,
     modifier: Modifier = Modifier,
-    onConversationClick: (String, String?, String?) -> Unit,
+    onConversationClick: (MetroConversation) -> Unit,
     filterPredicate: ((MetroConversation) -> Boolean)? = null,
     emptyStateTitle: String = "No conversations",
     emptyStateMessage: String = "Your conversations will appear here"
@@ -73,7 +75,9 @@ fun MessagesTab(
             filteredConversations.isEmpty() -> EmptyState(emptyStateTitle, emptyStateMessage)
             else -> ConversationList(
                 conversations = filteredConversations,
-                onConversationClick = onConversationClick
+                onConversationClick = onConversationClick,
+                // archive state is app-owned (Android has no archive flag): long-press toggles it
+                onLongPress = { metroMessagesViewModel.setArchived(it.threadId, !it.isArchived) }
             )
         }
     }
@@ -82,7 +86,8 @@ fun MessagesTab(
 @Composable
 private fun ConversationList(
     conversations: List<MetroConversation>,
-    onConversationClick: (String, String?, String?) -> Unit
+    onConversationClick: (MetroConversation) -> Unit,
+    onLongPress: (MetroConversation) -> Unit
 ) {
     val lazyListState = rememberLazyListState()
 
@@ -102,29 +107,26 @@ private fun ConversationList(
             ) { conversation ->
                 ConversationListItem(
                     conversation = conversation,
-                    onClick = {
-                        onConversationClick(
-                            conversation.threadId.toString(),
-                            conversation.displayName,
-                            conversation.contactPhotoUri
-                        )
-                    }
+                    onClick = { onConversationClick(conversation) },
+                    onLongClick = { onLongPress(conversation) }
                 )
             }
         }
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ConversationListItem(
     conversation: MetroConversation,
     onClick: () -> Unit,
+    onLongClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
             .background(Color(0xFF1A1A1A))
             .padding(16.dp),
         verticalAlignment = Alignment.CenterVertically

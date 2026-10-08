@@ -1,6 +1,7 @@
 package com.metromessages
 
 import android.content.BroadcastReceiver
+import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
 import android.provider.Telephony
@@ -72,73 +73,44 @@ class SmsReceiver : BroadcastReceiver() {
         }
     }
 
-    // ✅ DEFINED: processMessages method
+    /**
+     * As the default SMS app, storing incoming messages is OUR job (the system no longer does it).
+     * The old version only logged, so incoming texts were dropped.
+     * SMS_RECEIVED (non-default) must never write; only SMS_DELIVER does.
+     */
     private fun processMessages(context: Context, messages: Array<SmsMessage>, isSmsDeliver: Boolean) {
+        if (!isSmsDeliver) return
         try {
-            // Group messages by sender (Fossify pattern)
-            val groupedMessages = messages.groupBy { sms ->
-                sms.originatingAddress ?: "Unknown"
-            }
-
-            for ((sender, smsList) in groupedMessages) {
-                // Combine multi-part messages
-                val combinedBody = smsList.joinToString("") { it.messageBody ?: "" }
-                val timestamp = smsList.firstOrNull()?.timestampMillis ?: System.currentTimeMillis()
-
-                // Get or create thread ID (CRITICAL for SMS integration)
-                val threadId = try {
-                    Telephony.Threads.getOrCreateThreadId(context, sender)
-                } catch (e: Exception) {
-                    // Fallback: Use hash of phone number
-                    sender.hashCode().toLong()
+            val bySender = messages.groupBy { it.originatingAddress ?: "Unknown" }
+            for ((sender, parts) in bySender) {
+                val values = ContentValues().apply {
+                    put(Telephony.Sms.ADDRESS, sender)
+                    put(Telephony.Sms.BODY, parts.joinToString("") { it.messageBody ?: "" })
+                    put(Telephony.Sms.DATE, System.currentTimeMillis())
+                    put(Telephony.Sms.DATE_SENT, parts.first().timestampMillis)
+                    put(Telephony.Sms.READ, 0)
+                    put(Telephony.Sms.SEEN, 0)
+                    put(Telephony.Sms.THREAD_ID, Telephony.Threads.getOrCreateThreadId(context, sender))
                 }
-
-                // Save to YOUR database (not system SMS database)
-                saveToAppDatabase(context, sender, combinedBody, timestamp, threadId, isSmsDeliver)
-
-                Log.d("SmsReceiver", "Processed SMS: $sender -> ${combinedBody.take(30)}...")
+                context.contentResolver.insert(Telephony.Sms.Inbox.CONTENT_URI, values)
+                Log.d("SmsReceiver", "Stored SMS from $sender")
             }
-
         } catch (e: Exception) {
-            Log.e("SmsReceiver", "Error processing messages", e)
+            Log.e("SmsReceiver", "Error storing SMS", e)
         }
     }
+}
 
-    // ✅ DEFINED: saveToAppDatabase method
-    private fun saveToAppDatabase(
-        context: Context,
-        sender: String,
-        body: String,
-        timestamp: Long,
-        threadId: Long,
-        isFromSmsDeliver: Boolean
-    ) {
+/** Radio result for an outgoing SMS: flip the OUTBOX row to SENT or FAILED. */
+class SmsSentReceiver : BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent) {
+        val row = intent.data ?: return
+        val type = if (resultCode == android.app.Activity.RESULT_OK) Telephony.Sms.MESSAGE_TYPE_SENT
+                   else Telephony.Sms.MESSAGE_TYPE_FAILED
         try {
-            // 🚨 IMPORTANT: Save to YOUR app's database, NOT system SMS database
-            // System SMS database is automatically updated by Android
-
-            // TODO: Replace with your actual database save logic
-            // Example using Room or SQLite
-
-            /*
-            val message = MetroMessage(
-                id = 0,
-                address = sender,
-                body = body,
-                date = timestamp,
-                threadId = threadId,
-                type = if (isFromSmsDeliver) Message.TYPE_RECEIVED_DELIVER else Message.TYPE_RECEIVED,
-                read = false
-            )
-
-            // Insert into your app's database
-            metroMessagesRepository.insertMessage(message)
-            */
-
-            Log.d("SmsReceiver", "Saved to app DB: $sender, thread: $threadId")
-
+            context.contentResolver.update(row, ContentValues().apply { put(Telephony.Sms.TYPE, type) }, null, null)
         } catch (e: Exception) {
-            Log.e("SmsReceiver", "Error saving to app database", e)
+            Log.e("SmsSentReceiver", "Could not update sent state", e)
         }
     }
 }

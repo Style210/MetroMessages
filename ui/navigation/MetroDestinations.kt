@@ -17,9 +17,9 @@ sealed class MetroDestinations(val route: String) {
             contactPhotoUrl: String? = null,
             initialTab: Int = 1
         ): String {
-            val encodedContactName = contactName.replace("/", "-")
+            val encodedContactName = android.net.Uri.encode(contactName)
             // ✅ FIXED: Use "null" string instead of empty string for null values
-            val encodedPhotoUrl = contactPhotoUrl?.replace("/", "-") ?: "null"
+            val encodedPhotoUrl = contactPhotoUrl?.let { android.net.Uri.encode(it) } ?: "null"
             // ✅ ADDED: Include contactId in the route
             return "sms_conversation/$conversationId/$contactId/$encodedContactName/$encodedPhotoUrl/$initialTab"
         }
@@ -33,9 +33,9 @@ sealed class MetroDestinations(val route: String) {
             contactPhotoUrl: String? = null,
             initialTab: Int = 1
         ): String {
-            val encodedContactName = contactName.replace("/", "-")
+            val encodedContactName = android.net.Uri.encode(contactName)
             // ✅ FIXED: Use "null" string instead of empty string for null values
-            val encodedPhotoUrl = contactPhotoUrl?.replace("/", "-") ?: "null"
+            val encodedPhotoUrl = contactPhotoUrl?.let { android.net.Uri.encode(it) } ?: "null"
             return "facebook_conversation/$conversationId/$encodedContactName/$encodedPhotoUrl/$initialTab"
         }
     }
@@ -46,7 +46,6 @@ sealed class MetroDestinations(val route: String) {
         fun parseConversationParams(backStackEntry: androidx.navigation.NavBackStackEntry): ConversationParams {
             val photoUrl = backStackEntry.arguments?.getString("contactPhotoUrl")
                 ?.takeIf { it != "null" && it.isNotEmpty() }
-                ?.replace("-", "/")
 
             // ✅ ADDED: Parse contactId from route parameters
             val contactId = backStackEntry.arguments?.getString("contactId")?.toLongOrNull() ?: 0L
@@ -61,7 +60,7 @@ sealed class MetroDestinations(val route: String) {
             return ConversationParams(
                 conversationId = backStackEntry.arguments?.getString("conversationId") ?: "",
                 contactId = contactId, // ✅ ADDED: contactId parameter
-                contactName = backStackEntry.arguments?.getString("contactName")?.replace("-", "/") ?: "Unknown Contact",
+                contactName = backStackEntry.arguments?.getString("contactName") ?: "Unknown Contact",
                 contactPhotoUrl = photoUrl,
                 initialTab = backStackEntry.arguments?.getString("initialTab")?.toIntOrNull() ?: 1
             )

@@ -43,6 +43,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavHostController
+import com.metromessages.data.local.metromessagehub.MetroConversation
 import com.metromessages.data.local.metromessagehub.MetroMessagesViewModel
 import com.metromessages.data.settingsscreen.SettingsPreferences
 import com.metromessages.ui.components.CollapsibleHeaderScreen
@@ -61,7 +62,7 @@ fun TabbedConversationScreen(
     navController: NavHostController,
     metroFont: MetroFont,
     // ✅ FIXED: Removed @Composable annotation - matches MessagesTab signature
-    onNavigateToConversation: (String, String?, String?) -> Unit
+    onNavigateToConversation: (MetroConversation) -> Unit
 ) {
     val context = LocalContext.current
     val activity = context as? Activity
