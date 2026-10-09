@@ -43,7 +43,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavHostController
-import com.metromessages.data.local.metromessagehub.MetroConversation
 import com.metromessages.data.local.metromessagehub.MetroMessagesViewModel
 import com.metromessages.data.settingsscreen.SettingsPreferences
 import com.metromessages.ui.components.CollapsibleHeaderScreen
@@ -51,6 +50,7 @@ import com.metromessages.ui.components.MetroFont
 import com.metromessages.ui.components.MetroPulsingDivider
 import com.metromessages.ui.tab.ArchiveTab
 import com.metromessages.ui.tab.MessagesTab
+import com.metromessages.ui.tab.TogetherTab
 import com.metromessages.ui.theme.MetroHeaderCanvas
 import com.metromessages.ui.theme.MetroTypography
 import kotlinx.coroutines.launch
@@ -62,7 +62,7 @@ fun TabbedConversationScreen(
     navController: NavHostController,
     metroFont: MetroFont,
     // ✅ FIXED: Removed @Composable annotation - matches MessagesTab signature
-    onNavigateToConversation: (MetroConversation) -> Unit
+    onNavigateToConversation: (String, String?, String?) -> Unit
 ) {
     val context = LocalContext.current
     val activity = context as? Activity
@@ -219,25 +219,17 @@ fun TabbedConversationScreen(
                             MessagesTab(
                                 metroMessagesViewModel = metroMessagesViewModel,
                                 modifier = Modifier.fillMaxWidth(),
-                                // ✅ Now the signatures match perfectly
                                 onConversationClick = onNavigateToConversation,
-                                filterPredicate = { conversation ->
-                                    conversation.isIndividual && !conversation.isArchived
-                                },
-                                emptyStateTitle = "No individual messages",
-                                emptyStateMessage = "Start a new conversation to begin messaging"
+                                filterPredicate = { it.isOneToOne && !it.isArchived },
+                                emptyStateTitle = "no chats",
+                                emptyStateMessage = "your 1:1 conversations will appear here"
                             )
                         }
                         1 -> {
-                            MessagesTab(
+                            TogetherTab(
                                 metroMessagesViewModel = metroMessagesViewModel,
                                 modifier = Modifier.fillMaxWidth(),
-                                onConversationClick = onNavigateToConversation,
-                                filterPredicate = { conversation ->
-                                    conversation.isGroup && !conversation.isArchived
-                                },
-                                emptyStateTitle = "No group conversations",
-                                emptyStateMessage = "Create a group to start chatting with multiple people"
+                                onConversationClick = onNavigateToConversation
                             )
                         }
                         2 -> {

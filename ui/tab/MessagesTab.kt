@@ -1,113 +1,136 @@
-// File: ui/tab/MessagesTab.kt - FIXED VERSION
+// File: ui/tab/MessagesTab.kt - UPDATED with 1:1 filtering
 package com.metromessages.ui.tab
 
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.Spring.DampingRatioMediumBouncy
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.MaterialTheme
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.derivedStateOf
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
 import com.metromessages.data.local.metromessagehub.MetroConversation
 import com.metromessages.data.local.metromessagehub.MetroMessagesViewModel
-import com.metromessages.ui.components.ContactAvatar
 import com.metromessages.ui.components.FadingEdgesContent
 import com.metromessages.ui.theme.formatFriendlyTimestamp
+import kotlinx.coroutines.delay
 
 @Composable
 fun MessagesTab(
     metroMessagesViewModel: MetroMessagesViewModel,
     modifier: Modifier = Modifier,
-    onConversationClick: (MetroConversation) -> Unit,
+    onConversationClick: (String, String?, String?) -> Unit,
     filterPredicate: ((MetroConversation) -> Boolean)? = null,
-    emptyStateTitle: String = "No conversations",
-    emptyStateMessage: String = "Your conversations will appear here"
+    emptyStateTitle: String = "no chats",
+    emptyStateMessage: String = "your 1:1 conversations will appear here"
 ) {
-    // ✅ FOSSIFY PATTERN: Single source of truth
     val conversations by metroMessagesViewModel.conversations.collectAsState()
-    val isLoading by metroMessagesViewModel.isLoading.collectAsState()
-    val error by metroMessagesViewModel.error.collectAsState()
 
-    // ✅ UI-SIDE FILTERING: Pure Fossify compliance
-    // ✅ FIXED: Removed threadId filtering - already handled at source
-    val filteredConversations by remember(conversations, filterPredicate) {
-        derivedStateOf {
-            filterPredicate?.let { conversations.filter(it) } ?: conversations
-        }
+    // DEFAULT FILTER: Show only 1:1 conversations (exactly 2 participants)
+    val defaultFilter: (MetroConversation) -> Boolean = { conversation ->
+        conversation.isOneToOne
     }
 
-    // Auto-refresh on first load
-    LaunchedEffect(Unit) {
-        if (conversations.isEmpty() && !isLoading) {
-            metroMessagesViewModel.refreshAllConversations()
-        }
+    val filteredConversations = remember(conversations, filterPredicate) {
+        val finalFilter = filterPredicate ?: defaultFilter
+        conversations.filter(finalFilter)
     }
 
     Box(modifier = modifier.fillMaxSize()) {
         when {
-            isLoading -> LoadingState()
-            error != null -> ErrorState(error!!) { metroMessagesViewModel.refreshAllConversations() }
-            filteredConversations.isEmpty() -> EmptyState(emptyStateTitle, emptyStateMessage)
-            else -> ConversationList(
-                conversations = filteredConversations,
-                onConversationClick = onConversationClick,
-                // archive state is app-owned (Android has no archive flag): long-press toggles it
-                onLongPress = { metroMessagesViewModel.setArchived(it.threadId, !it.isArchived) }
-            )
+            filteredConversations.isEmpty() -> {
+                EmptyConversationState(
+                    title = emptyStateTitle,
+                    message = emptyStateMessage
+                )
+            }
+            else -> {
+                ConversationList(
+                    conversations = filteredConversations,
+                    onConversationClick = onConversationClick,
+                    // archive is app-owned (Android has no archive flag): press-and-hold toggles it
+                    onLongPress = { metroMessagesViewModel.setArchived(it.threadId, !it.isArchived) }
+                )
+            }
         }
+    }
+}
+
+@Composable
+private fun EmptyConversationState(
+    title: String,
+    message: String
+) {
+    Column(
+        modifier = Modifier.fillMaxSize(),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(
+            text = title,
+            color = Color.White,
+            fontWeight = FontWeight.Bold,
+            fontSize = 18.sp
+        )
+        Text(
+            text = message,
+            color = Color.White.copy(0.6f),
+            fontSize = 14.sp,
+            modifier = Modifier.padding(top = 8.dp)
+        )
     }
 }
 
 @Composable
 private fun ConversationList(
     conversations: List<MetroConversation>,
-    onConversationClick: (MetroConversation) -> Unit,
+    onConversationClick: (String, String?, String?) -> Unit,
     onLongPress: (MetroConversation) -> Unit
 ) {
     val lazyListState = rememberLazyListState()
 
-    FadingEdgesContent(scrollState = lazyListState, topEdgeHeight = 80.dp) {
+    FadingEdgesContent(
+        scrollState = lazyListState,
+        topEdgeHeight = 80.dp
+    ) {
         LazyColumn(
             state = lazyListState,
-            modifier = Modifier.fillMaxSize(),
-            verticalArrangement = Arrangement.spacedBy(1.dp)
+            modifier = Modifier.fillMaxSize()
         ) {
-            items(
+            itemsIndexed(
                 items = conversations,
-                key = { conversation ->
-                    // ✅ NOW GUARANTEED TO BE UNIQUE AND VALID
-                    // threadId is > 0 because invalid conversations were filtered at source
-                    conversation.threadId
-                }
-            ) { conversation ->
-                ConversationListItem(
+                key = { _, conversation -> conversation.threadId }
+            ) { index, conversation ->
+                AnimatedConversationListItem(
                     conversation = conversation,
-                    onClick = { onConversationClick(conversation) },
+                    index = index,
+                    onClick = {
+                        onConversationClick(
+                            conversation.threadId.toString(),
+                            conversation.displayName,
+                            conversation.contactPhotoUri
+                        )
+                    },
                     onLongClick = { onLongPress(conversation) }
                 )
             }
@@ -117,39 +140,100 @@ private fun ConversationList(
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun ConversationListItem(
+private fun AnimatedConversationListItem(
     conversation: MetroConversation,
+    index: Int,
     onClick: () -> Unit,
-    onLongClick: () -> Unit,
-    modifier: Modifier = Modifier
+    onLongClick: () -> Unit
 ) {
+    val density = LocalDensity.current
+    var entranceStarted by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        delay(5L)
+        entranceStarted = true
+    }
+
+    val entranceAlpha by animateFloatAsState(
+        targetValue = if (entranceStarted) 1f else 0f,
+        animationSpec = tween(600),
+        label = "ConversationEntranceAlpha"
+    )
+
+    val entranceSlide by animateFloatAsState(
+        targetValue = if (entranceStarted) 0f else 40f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioLowBouncy,
+            stiffness = Spring.StiffnessLow
+        ),
+        label = "ConversationEntranceSlide"
+    )
+
+    val entranceRotation by animateFloatAsState(
+        targetValue = if (entranceStarted) 0f else -10f,
+        animationSpec = spring(
+            dampingRatio = DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessLow
+        ),
+        label = "ConversationEntranceRotation"
+    )
+
     Row(
-        modifier = modifier
-            .fillMaxWidth()
+        modifier = Modifier
+            .fillMaxWidth(0.95f)
             .combinedClickable(onClick = onClick, onLongClick = onLongClick)
-            .background(Color(0xFF1A1A1A))
-            .padding(16.dp),
+            .padding(16.dp)
+            .graphicsLayer {
+                alpha = entranceAlpha
+                translationX = entranceSlide
+                rotationY = entranceRotation
+                transformOrigin = TransformOrigin(0f, 0.5f)
+                cameraDistance = 8f * density.density
+            },
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // ✅ CONTACT AVATAR WITH PRIORITY PHOTOS
-        ContactAvatar(
-            name = conversation.displayName,
-            photoUrl = conversation.contactPhotoUri,
-            size = 56.dp,
-            isWindowsPhoneStyle = true,
-            isSquare = true
-        )
+        Box(
+            modifier = Modifier
+                .size(56.dp)
+                .background(Color.Gray.copy(alpha = 0.3f))
+                .graphicsLayer {
+                    scaleX = if (entranceStarted) 1f else 0.9f
+                    scaleY = scaleX
+                    rotationY = if (entranceStarted) 0f else -15f
+                },
+            contentAlignment = Alignment.Center
+        ) {
+            if (conversation.contactPhotoUri != null) {
+                AsyncImage(
+                    model = conversation.contactPhotoUri,
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else {
+                Icon(
+                    imageVector = Icons.Default.Person,
+                    contentDescription = "Contact",
+                    tint = Color.Gray.copy(alpha = 0.7f),
+                    modifier = Modifier.size(32.dp)
+                )
+            }
+        }
 
         Column(
             modifier = Modifier
-                .weight(1f)
                 .padding(start = 16.dp)
+                .weight(1f)
+                .graphicsLayer {
+                    val infoProgress = if (entranceStarted) 1f else 0f
+                    alpha = infoProgress
+                    translationX = if (entranceStarted) 0f else -10f
+                    scaleX = if (entranceStarted) 1f else 0.95f
+                    scaleY = scaleX
+                }
         ) {
-            // Header row with name and timestamp
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Text(
                     text = conversation.displayName,
@@ -157,131 +241,21 @@ private fun ConversationListItem(
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 16.sp,
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f)
+                    overflow = TextOverflow.Ellipsis
                 )
-
                 Text(
                     text = formatFriendlyTimestamp(conversation.lastActivity),
                     color = Color.White.copy(alpha = 0.6f),
                     fontSize = 12.sp
                 )
             }
-
-            // Message preview row
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = conversation.lastMessage ?: "No messages",
-                    color = Color.White.copy(alpha = 0.7f),
-                    fontSize = 14.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f)
-                )
-
-                // Status indicators
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    // Unread indicator
-                    if (conversation.hasUnreadMessages) {
-                        Box(
-                            modifier = Modifier
-                                .size(8.dp)
-                                .background(Color(0xFF0063B1))
-                        )
-                    }
-
-                    // OTP badge
-                    if (conversation.otpMessageCount > 0) {
-                        Box(
-                            modifier = Modifier
-                                .size(8.dp)
-                                .background(Color(0xFFFF6B6B))
-                        )
-                    }
-
-                    // Group indicator
-                    if (conversation.isGroup) {
-                        Text("👥", fontSize = 12.sp)
-                    }
-
-                    // Archived indicator
-                    if (conversation.isArchived) {
-                        Text("📁", fontSize = 12.sp)
-                    }
-                }
-            }
+            Text(
+                text = conversation.lastMessage ?: "",
+                color = Color.White.copy(alpha = 0.7f),
+                fontSize = 14.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
         }
-    }
-}
-
-@Composable
-private fun LoadingState() {
-    Column(
-        modifier = Modifier.fillMaxSize(),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
-        CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
-        Text(
-            text = "Loading conversations...",
-            color = Color.White.copy(alpha = 0.6f),
-            modifier = Modifier.padding(top = 16.dp)
-        )
-    }
-}
-
-@Composable
-private fun ErrorState(errorMessage: String, onRetry: () -> Unit) {
-    Column(
-        modifier = Modifier.fillMaxSize(),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
-        Text(
-            text = "Error loading conversations",
-            color = Color.Red.copy(alpha = 0.8f),
-            fontWeight = FontWeight.Bold
-        )
-        Text(
-            text = errorMessage,
-            color = Color.White.copy(alpha = 0.6f),
-            modifier = Modifier.padding(top = 8.dp),
-            textAlign = TextAlign.Center
-        )
-        Text(
-            text = "Tap to retry",
-            color = Color.White.copy(alpha = 0.4f),
-            modifier = Modifier
-                .padding(top = 16.dp)
-                .clickable { onRetry() }
-        )
-    }
-}
-
-@Composable
-private fun EmptyState(title: String, message: String) {
-    Column(
-        modifier = Modifier.fillMaxSize(),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
-        Text(
-            text = title,
-            color = Color.White.copy(alpha = 0.6f),
-            fontWeight = FontWeight.Bold,
-            fontSize = 18.sp
-        )
-        Text(
-            text = message,
-            color = Color.White.copy(alpha = 0.4f),
-            modifier = Modifier.padding(top = 8.dp),
-            textAlign = TextAlign.Center
-        )
     }
 }

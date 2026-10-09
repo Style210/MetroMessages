@@ -20,14 +20,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.metromessages.data.local.metromessagehub.MetroConversation
 import com.metromessages.data.local.metromessagehub.MetroMessagesViewModel
 
 @Composable
 fun ArchiveTab(
     metroMessagesViewModel: MetroMessagesViewModel,
     modifier: Modifier = Modifier,
-    onConversationClick: (MetroConversation) -> Unit,
+    onConversationClick: (String, String?, String?) -> Unit,
     isAuthenticated: Boolean = false,
     onRequestAuthentication: () -> Unit
 ) {

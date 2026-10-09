@@ -42,6 +42,7 @@ data class MetroConversation(
     val phoneNumber: String? get() = participants.firstOrNull()
     val isGroup: Boolean get() = participants.size > 1
     val isIndividual: Boolean get() = !isGroup
+    val isOneToOne: Boolean get() = participants.size == 1
     val hasUnreadMessages: Boolean get() = !read
     val lastMessage: String? get() = snippet?.takeIf { it.isNotBlank() }
     val lastActivity: Long get() = date

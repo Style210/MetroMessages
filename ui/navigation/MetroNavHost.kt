@@ -154,13 +154,16 @@ fun MetroNavHost(
                 metroMessagesViewModel = metroMessagesViewModel, // ✅ METROMESSAGES
                 navController = navController,
                 metroFont = metroFont,
-                onNavigateToConversation = { conversation ->
+                onNavigateToConversation = { conversationId, contactName, contactPhotoUrl ->
+                    // contactId lives on the loaded conversation: 0 = unsaved number or group
+                    val contactId = conversationId.toLongOrNull()
+                        ?.let { metroMessagesViewModel.conversationFor(it)?.contactId } ?: 0L
                     navController.navigate(
                         MetroDestinations.SmsConversation.createRoute(
-                            conversationId = conversation.threadId.toString(),
-                            contactId = conversation.contactId ?: 0L,   // 0 = unsaved number or group
-                            contactName = conversation.displayName,
-                            contactPhotoUrl = conversation.contactPhotoUri,
+                            conversationId = conversationId,
+                            contactId = contactId,
+                            contactName = contactName ?: "Unknown Contact",
+                            contactPhotoUrl = contactPhotoUrl,
                             initialTab = 1
                         )
                     )
