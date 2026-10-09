@@ -33,6 +33,8 @@ data class MetroConversation(
     val participants: List<String>,
     /** Display names parallel to [participants] (falls back to the number). */
     val participantNames: List<String> = participants,
+    /** Unread incoming messages (SMS + MMS) in this thread. */
+    val unreadCount: Int = 0,
     /** Contact id of the one-to-one contact, if saved. This is what ContactInfoPage opens. */
     val contactId: Long? = null,
     val contactPhotoUri: String? = null,
@@ -43,7 +45,7 @@ data class MetroConversation(
     val isGroup: Boolean get() = participants.size > 1
     val isIndividual: Boolean get() = !isGroup
     val isOneToOne: Boolean get() = participants.size == 1
-    val hasUnreadMessages: Boolean get() = !read
+    val hasUnreadMessages: Boolean get() = unreadCount > 0
     val lastMessage: String? get() = snippet?.takeIf { it.isNotBlank() }
     val lastActivity: Long get() = date
 
@@ -70,6 +72,8 @@ data class MetroMessage(
     val type: Int,
     val read: Boolean,
     val isMms: Boolean = false,
+    /** Delivery report for outgoing SMS: Telephony.Sms.STATUS_NONE / COMPLETE / PENDING / FAILED. */
+    val status: Int = Telephony.Sms.STATUS_NONE,
     val messageType: MessageType = MessageType.TEXT,
     val mediaUri: Uri? = null,
     val mimeType: String? = null,
@@ -80,6 +84,7 @@ data class MetroMessage(
     val isIncoming: Boolean get() = type == Telephony.Sms.MESSAGE_TYPE_INBOX
     val isOutgoing: Boolean get() = !isIncoming
     val isFailed: Boolean get() = type == Telephony.Sms.MESSAGE_TYPE_FAILED
+    val isDelivered: Boolean get() = status == Telephony.Sms.STATUS_COMPLETE
     val hasMedia: Boolean get() = mediaUri != null
 
     /** Codes are readable while fresh and masked once stale. Nothing is ever deleted from the provider. */
@@ -113,4 +118,22 @@ data class MetroMessage(
         fun looksLikeOtp(body: String?): Boolean =
             !body.isNullOrBlank() && CODE.containsMatchIn(body) && KEYWORD.containsMatchIn(body)
     }
+}
+
+/**
+ * The one definition of "same number" for the whole app, so messages, contacts and the dialer agree.
+ * Digits only, last 10 (so +1 555... == 555...); short codes keep their digits; alphanumeric senders
+ * ("AMAZON") compare as text. US-centric by design: two international numbers sharing their last 10
+ * digits would collide, which is vanishingly rare.
+ */
+object PhoneNumbers {
+    fun key(raw: String): String {
+        val digits = raw.filter { it.isDigit() }
+        return when {
+            raw.any { it.isLetter() } -> raw.trim().lowercase()
+            digits.length < 7 -> digits
+            else -> digits.takeLast(10)
+        }
+    }
+    fun same(a: String, b: String) = key(a) == key(b)
 }

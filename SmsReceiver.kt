@@ -4,6 +4,7 @@ import android.content.BroadcastReceiver
 import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
+import android.provider.BlockedNumberContract
 import android.provider.Telephony
 import android.telephony.SmsMessage
 import android.util.Log
@@ -83,34 +84,25 @@ class SmsReceiver : BroadcastReceiver() {
         try {
             val bySender = messages.groupBy { it.originatingAddress ?: "Unknown" }
             for ((sender, parts) in bySender) {
+                // Blocked numbers are still stored (nothing is lost) but arrive read and silent.
+                val blocked = try { BlockedNumberContract.isBlocked(context, sender) } catch (e: Exception) { false }
+                val threadId = Telephony.Threads.getOrCreateThreadId(context, sender)
+                val body = parts.joinToString("") { it.messageBody ?: "" }
                 val values = ContentValues().apply {
                     put(Telephony.Sms.ADDRESS, sender)
-                    put(Telephony.Sms.BODY, parts.joinToString("") { it.messageBody ?: "" })
+                    put(Telephony.Sms.BODY, body)
                     put(Telephony.Sms.DATE, System.currentTimeMillis())
                     put(Telephony.Sms.DATE_SENT, parts.first().timestampMillis)
-                    put(Telephony.Sms.READ, 0)
-                    put(Telephony.Sms.SEEN, 0)
-                    put(Telephony.Sms.THREAD_ID, Telephony.Threads.getOrCreateThreadId(context, sender))
+                    put(Telephony.Sms.READ, if (blocked) 1 else 0)
+                    put(Telephony.Sms.SEEN, if (blocked) 1 else 0)
+                    put(Telephony.Sms.THREAD_ID, threadId)
                 }
                 context.contentResolver.insert(Telephony.Sms.Inbox.CONTENT_URI, values)
+                if (!blocked) MessageNotifier.notifyIncoming(context, threadId, sender)
                 Log.d("SmsReceiver", "Stored SMS from $sender")
             }
         } catch (e: Exception) {
             Log.e("SmsReceiver", "Error storing SMS", e)
-        }
-    }
-}
-
-/** Radio result for an outgoing SMS: flip the OUTBOX row to SENT or FAILED. */
-class SmsSentReceiver : BroadcastReceiver() {
-    override fun onReceive(context: Context, intent: Intent) {
-        val row = intent.data ?: return
-        val type = if (resultCode == android.app.Activity.RESULT_OK) Telephony.Sms.MESSAGE_TYPE_SENT
-                   else Telephony.Sms.MESSAGE_TYPE_FAILED
-        try {
-            context.contentResolver.update(row, ContentValues().apply { put(Telephony.Sms.TYPE, type) }, null, null)
-        } catch (e: Exception) {
-            Log.e("SmsSentReceiver", "Could not update sent state", e)
         }
     }
 }

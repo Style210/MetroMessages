@@ -7,13 +7,16 @@ package com.metromessages.data.local.metromessagehub
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.metromessages.data.local.metropeoplehub.MetroContact
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -43,6 +46,10 @@ class MetroMessagesViewModel @Inject constructor(
 
     private val _mediaAttachments = MutableStateFlow<List<Uri>>(emptyList())
     val mediaAttachments: StateFlow<List<Uri>> = _mediaAttachments.asStateFlow()
+
+    /** Unread total across non-archived threads, live: feed it to the home tile / badge. */
+    val totalUnread: StateFlow<Int> = repo.unreadTotal()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
 
     private var watcher: Job? = null
 
@@ -105,6 +112,7 @@ class MetroMessagesViewModel @Inject constructor(
         start()
         if (_currentThreadId.value != threadId) _messages.value = emptyList()
         _currentThreadId.value = threadId
+        repo.onThreadOpened(threadId)
         viewModelScope.launch {
             reloadMessages(threadId)
             repo.markThreadRead(threadId)   // the provider change this causes triggers one more refresh
@@ -120,7 +128,34 @@ class MetroMessagesViewModel @Inject constructor(
         }
     }
 
+    /** Entry point for the contact screen: open (or create) the thread with this contact. */
+    fun openThreadFor(contact: MetroContact) {
+        viewModelScope.launch {
+            repo.threadIdForContact(contact)?.let { loadMessages(it) }
+                ?: run { _error.value = "${contact.displayName} has no phone number" }
+        }
+    }
+
+    suspend fun conversationsForContact(contact: MetroContact) = repo.conversationsForContact(contact)
+    suspend fun search(query: String) = repo.search(query)
+
+    fun retry(message: MetroMessage) {
+        viewModelScope.launch { if (!repo.retry(message)) _error.value = "Could not resend" }
+    }
+
+    fun deleteMessage(message: MetroMessage) {
+        viewModelScope.launch { repo.deleteMessage(message) }
+    }
+
+    fun deleteConversation(threadId: Long) {
+        viewModelScope.launch {
+            if (_currentThreadId.value == threadId) clearCurrentConversation()
+            repo.deleteThread(threadId)
+        }
+    }
+
     fun clearCurrentConversation() {
+        repo.onThreadClosed()
         _currentThreadId.value = null
         _messages.value = emptyList()
         _messageDraft.value = ""
@@ -172,4 +207,6 @@ class MetroMessagesViewModel @Inject constructor(
     fun clearMediaDraft() { _mediaAttachments.value = emptyList() }
 
     fun clearError() { _error.value = null }
+
+    override fun onCleared() { repo.onThreadClosed() }
 }
